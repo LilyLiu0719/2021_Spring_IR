@@ -1,0 +1,5 @@
+*.swp
+*.log
+*/*/CIRB010/
+*/*/model/
+.DS_Store
