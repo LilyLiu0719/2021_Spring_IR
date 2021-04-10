@@ -7,10 +7,9 @@ import pickle
 k1 = 1.5
 b = 0.75
 k3 = 100
-load = True
 
 def BM25_first(N, df):
-    return log( (N-df+0.5)/(df+0.5) )
+    return np.log( (N-df+0.5)/(df+0.5) )
 
 def BM25_second(tf, dl, avdl):
 	K = k1 * ( (1-b) + b * (float(dl)/float(avdl)) )
@@ -23,101 +22,103 @@ class DocProcessor():
         #self.file_list = '../model/file-list'
         self.N = 46972
 
-        self.inverted_dict = {}
-        self.bigram_mapping = {}
-        self.doc_vector = list(map(lambda x: [], range(self.N)))
-        self.first = list(map(lambda x: [], range(29906)))
+        self.vocabs = [] # [ voc1, voc2, ... ] voc: [ df, first, [doc1, tf], [doc2, tf], ... ]
+        self.documents = list(map(lambda x: [], range(self.N))) # [doc1, doc2, ...] doc: [[term1, tf, second], [term2, tf, second], ...]
+        self.df = []
+        self.bigram_mapping = {} # "v1 v2": new_voc
 
-    def process(self):
+    def process(self, load=False):
         print("[*] start processing documents...")
         start_time = time.time()
         
         if load:
+            print("[ ] start loading params from obj/")
             with open('./obj/bigrams.pkl', 'rb') as f: 
                 self.bigram_mapping = pickle.load(f)
-            with open('./obj/docvec.pkl', 'rb') as f: 
-                self.doc_vector = pickle.load(f)
-            with open('./obj/first.pkl', 'rb') as f: 
-                self.first = pickle.load(f)
-            with open('./obj/inverted.pkl', 'rb') as f: 
-                self.inverted_dict = pickle.load(f)
+            with open('./obj/documents.pkl', 'rb') as f: 
+                self.documents = pickle.load(f)
+            with open('./obj/vocabs.pkl', 'rb') as f: 
+                self.vocabs = pickle.load(f)
             print("[*] finish loading params from obj/")
+
         else:
             vocab_len = 29906 
             progress = tqdm(total=37320537)
+            self.vocabs = list(map(lambda x: [], range(vocab_len+1)))
+            self.df = list(map(lambda x: [], range(vocab_len+1)))
             with open(self.inverted_file, 'r') as f:
                 start = True
-                for line in f:
+                lines = f.readlines()
+                for line in lines:
                     progress.update(1)
-                    assert(len(self.first)==vocab_len)
                     if start:
                         count = 0
                         start = False 
                         voc1, voc2, df = line.split()
                         df = int(df)
-                        first = BM25_first(self.N, df)
+                        #first = BM25_first(self.N, df)
                         if voc2 == "-1":
                             voc = int(voc1)
-                            self.inverted_dict[voc] = []
-                            self.first[voc] = first
+                            self.df[voc] = df
+                            self.vocabs[voc] = []
                         else:
                             vocab_len+=1
                             voc = vocab_len
-                            self.inverted_dict[voc] = []
+                            self.vocabs.append([])
+                            self.df.append(df)
                             key = voc1 + " " + voc2
                             self.bigram_mapping[key] = vocab_len
-                            self.first.append(first)
                             
                     else:
                         doc_id, tf = line.split()
                         tf = int(tf)
                         count+=1
-                        self.inverted_dict[voc].append([doc_id, tf])
-                        self.doc_vector[int(doc_id)].append([voc, tf])
+                        self.vocabs[voc].append([doc_id, tf])
+                        self.documents[int(doc_id)].append([voc, tf])
                         if count == df:
                             start = True
-                self.save() 
 
-            non_empty_vector = list(filter(lambda x: len(x)>0, self.doc_vector))
-            non_empty_index = list(filter(lambda x: len(self.doc_vector[x])>0, range(len(self.doc_vector))))
-            empty_index = list(filter(lambda x: len(self.doc_vector[x])==0, range(len(self.doc_vector))))
-            print("index: ", empty_index)
+            first = BM25_first(self.N, np.array(self.df))
+            print(first)
+            non_empty_vector = list(filter(lambda x: len(x)>0, self.documents))
+            non_empty_index = list(filter(lambda x: len(self.documents[x])>0, range(len(self.documents))))
+            empty_index = list(filter(lambda x: len(self.documents[x])==0, range(len(self.documents))))
+            print("empty index: ", empty_index)
             #print("doc_vector:", non_empty_vector)
-            doclens = list(map(lambda y: y[1], list(map(lambda x: np.array(x).sum(axis=0), non_empty_vector))))
+            self.doclens = list(map(lambda y: y[1], list(map(lambda x: np.array(x).sum(axis=0), non_empty_vector))))
             for i in empty_index:
-                doclens.insert(i, 0)
-            print(len(doclens))
-            avglen = sum(doclens)/len(doclens)
+                self.doclens.insert(i, 0)
+            self.avglen = sum(self.doclens)/len(self.doclens)
             #print("doclen =", doclens)
             for i in non_empty_index:
-                print(i)
-                self.doc_vector[i] = list(map(lambda x: [x[0], BM25_second(x[1], doclens[i], avglen)], self.doc_vector[i]))
-            
-            print("[*] successfully generated document VSM")
-            print("total dimension:", vocab_len)
-            print("time:", time.time()-start_time)
+                self.documents[i] = list(map(lambda x: [x[0], x[1], BM25_second(x[1], self.doclens[i], self.avglen)], self.documents[i]))
+        
+        print("[*] successfully generated document VSM")
+        #print("total dimension:", vocab_len)
+        print("time:", time.time()-start_time)
 
     def save(self):
         with open('./obj/bigrams.pkl', 'wb') as f: 
             pickle.dump(self.bigram_mapping, f)
-        with open('./obj/docvec.pkl', 'wb') as f: 
-            pickle.dump(self.doc_vector, f)
-        with open('./obj/first.pkl', 'wb') as f: 
-            pickle.dump(self.first, f)
-        with open('./obj/inverted.pkl', 'wb') as f: 
-            pickle.dump(self.inverted_dict, f)
+        with open('./obj/documents.pkl', 'wb') as f: 
+            pickle.dump(self.documents, f)
+        with open('./obj/vocabs.pkl', 'wb') as f: 
+            pickle.dump(self.vocabs, f)
 
     def get_bigram(self):
         return self.bigram_mapping
     
-    def get_first(self):
-        return self.first
+    def get_vocabs(self):
+        return self.vocabs
 
-    def get_docvec(self):
-        return self.doc_vector
+    def get_documents(self):
+        return self.documents
 
-    def get_inverted(self):
-        return self.inverted_dict
+    def get_doclens(self):
+        return self.doclens
+    
+    def get_avglen(self):
+        return self.avglen
 
 if __name__ == "__main__":
     tfidf = DocProcessor()
