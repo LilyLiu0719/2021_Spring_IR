@@ -9,13 +9,9 @@ from tqdm import tqdm
 import csv
 cimport numpy as np
 
-k3 = 100
-alpha = 1.0
-beta = 0.1
+alpha = 3
+beta = 1
 n = 5
-
-def BM25(first, second, qtf):
-    return first*second*(k3+1)*qtf/(k3+qtf)
 
 class QueryProcessor():
     def __init__(self):
@@ -35,6 +31,7 @@ class QueryProcessor():
         self.N = 46972 
         self.results = []
         self.qids = []
+        self.file_name = {}
         
         print("[*] start parsing queries...")
         with open("../model/vocab.all") as f:
@@ -43,6 +40,12 @@ class QueryProcessor():
                     continue
                 self.vocab[line.strip()] = i
 
+        with open("../model/file-list") as f:
+            for i, line in enumerate(f):
+                name = line.strip().split('/')[-1]
+                self.file_name[i] = name.lower()
+
+        #tree = ET.parse('../queries/query-test.xml')
         tree = ET.parse('../queries/query-train.xml')
         root = tree.getroot()
         self.queries = []
@@ -51,7 +54,7 @@ class QueryProcessor():
         for child in root:
             qterms = child[4].text.strip().replace('。', '').split('、')
             qterms.append(child[1].text.strip().replace('。', ''))
-            self.qids.append(child[0][-3:])
+            self.qids.append(child[0].text[-3:])
             self.queries.append(list(map(lambda x: list(map(lambda y: self.vocab[y], x)), qterms)))
 
         for i, query in enumerate(self.queries):
@@ -150,7 +153,8 @@ class QueryProcessor():
             for i in range(len(self.qids)):
                 result = ""
                 for d in self.results[i]:
-                    result+= ("doc_"+str(d)+" ")
+                    if d in self.file_name.keys():
+                        result+= (self.file_name[d]+" ")
                 result = result.strip()
                 writer.writerow([str(self.qids[i]), result])
 
