@@ -13,7 +13,7 @@ cimport numpy as np
 alpha = 2.5
 beta = 1
 n = 7
-k3 = 80
+k3 = 100
 
 class QueryProcessor():
     def __init__(self):
@@ -34,6 +34,8 @@ class QueryProcessor():
         self.results = []
         self.qids = []
         self.file_name = {}
+
+        print("bigram len:", len(self.bigrams))
         
         print("[*] start parsing queries...")
         with open("../model/vocab.all") as f:
@@ -47,15 +49,14 @@ class QueryProcessor():
                 name = line.strip().split('/')[-1]
                 self.file_name[i] = name.lower()
 
-        #tree = ET.parse('../queries/query-test.xml')
-        tree = ET.parse('../queries/query-train.xml')
+        tree = ET.parse('../queries/query-test.xml')
+        #tree = ET.parse('../queries/query-train.xml')
         root = tree.getroot()
         self.queries = []
         self.qtf = [ [] for i in range(len(root))]
         self.qvoc = [ [] for i in range(len(root))]
         for child in root:
             qterms = child[4].text.strip().replace('。', '').split('、')
-            qterms.append(child[1].text.strip().replace('。', ''))
             qterms.append(child[1].text.strip().replace('。', ''))
             self.qids.append(child[0].text[-3:])
             self.queries.append(list(map(lambda x: list(map(lambda y: self.vocab[y], x)), qterms)))
@@ -140,6 +141,9 @@ class QueryProcessor():
             qtfs = dict(Counter(list((chain.from_iterable(query)))))
             qvoc = np.array(list(qtfs.keys()))
             qtf = np.array(list(qtfs.values()))
+            qids = qvoc.argsort()
+            qtf = qtf[qids]
+            qvoc = qvoc[qids]
             scores = []
             for i in range(self.N):
                 if self.doclens[i]==0:
@@ -159,6 +163,9 @@ class QueryProcessor():
             
             qvoc = np.array(list(qtfs.keys()))
             qtf = np.array(list(qtfs.values()))
+            qids = qvoc.argsort()
+            qtf = qtf[qids]
+            qvoc = qvoc[qids]
             scores = []
             for i in range(self.N):
                 if self.doclens[i]==0:
@@ -184,8 +191,8 @@ class QueryProcessor():
             plt.clf()
 
     def save(self):
-        with open('submission-train.csv', 'w', newline='') as csvfile:
-        #with open('submission-test.csv', 'w', newline='') as csvfile:
+        #with open('submission-train.csv', 'w', newline='') as csvfile:
+        with open('submission-test.csv', 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(['query_id', 'retrieved_docs'])
             for i in range(len(self.qids)):
