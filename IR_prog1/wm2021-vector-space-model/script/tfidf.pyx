@@ -7,7 +7,6 @@ cimport numpy as np
 
 k1 = 2
 b = 0.75
-k3 = 100
 
 def BM25_first(N, df):
     return np.log( (N-df+0.5)/(df+0.5) )
@@ -95,6 +94,9 @@ class DocProcessor():
                     self.voc[i].append(1)
                 self.tf[i] = np.array(self.tf[i])
                 self.voc[i] = np.array(self.voc[i])
+                ids = self.voc[i].argsort()
+                self.tf[i] = self.tf[i][ids]
+                self.voc[i] = self.voc[i][ids]
 
             #non_empty_vector = list(filter(lambda x: len(x)>0, self.documents))
             #non_empty_index = list(filter(lambda x: len(self.documents[x])>0, range(len(self.documents))))
@@ -102,7 +104,7 @@ class DocProcessor():
             #print("empty index: ", empty_index)
             #print("doc_vector:", non_empty_vector)
             
-            self.doclens = np.array(list(map(lambda x: x.sum(), self.tf)), dtype=np.int16)
+            self.doclens = list(map(lambda x: x.sum(), self.tf))
             #for i in empty_index:
             #    self.doclens.insert(i, 0)
             self.avglen = sum(self.doclens)/len(self.doclens)

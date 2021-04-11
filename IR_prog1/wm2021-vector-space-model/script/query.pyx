@@ -13,7 +13,7 @@ cimport numpy as np
 alpha = 2.5
 beta = 1
 n = 7
-k3 = 100
+k3 = 80
 
 class QueryProcessor():
     def __init__(self):
@@ -56,6 +56,7 @@ class QueryProcessor():
         for child in root:
             qterms = child[4].text.strip().replace('。', '').split('、')
             qterms.append(child[1].text.strip().replace('。', ''))
+            qterms.append(child[1].text.strip().replace('。', ''))
             self.qids.append(child[0].text[-3:])
             self.queries.append(list(map(lambda x: list(map(lambda y: self.vocab[y], x)), qterms)))
 
@@ -96,7 +97,21 @@ class QueryProcessor():
                 p1+=1
                 p2+=1
         return score
-    
+
+    def Rocchio(self, q, tf, voc):
+        pool = []
+        for i in range(n):
+            for j in range(len(tf[i])):
+                pool += [voc[i][j]]*tf[i][j]
+        pairs = Counter(pool)
+
+        for v, tf in pairs.items():
+            if v in q.keys():
+                q[v] = alpha*float(q[v])+beta*float(pairs[v])/n
+            else:
+                q[v] = beta*float(pairs[v])/n
+        return q
+    '''
     def Rocchio(self, np.ndarray[np.int_t, ndim=1] qtf, np.ndarray[np.int_t, ndim=1] qvoc, list tf, list voc):
         cdef np.ndarray[np.double_t, ndim=1] new_qtf = np.array([], dtype=np.double)
         cdef np.ndarray[np.int_t, ndim=1] new_qvoc = np.array([], dtype=np.int)
@@ -104,21 +119,8 @@ class QueryProcessor():
         for i in range(1, n):
             new_qvoc, new_qtf = self.add_bow(new_qvoc, np.array(voc[i]), new_qtf, np.array(tf[i]).astype(np.double))
         new_qvoc, new_qtf = self.add_bow(new_qvoc, qvoc, beta*new_qtf, alpha*qtf.astype(np.double))
-        '''
-        pool = []
-        for i in range(n):
-            for j in range(len(tf[i])):
-                pool += [voc[i][j]]*tf[i][j]
-        cdef dict pairs = dict(Counter(pool))
-        print("pairs:", pairs)
-
-        for v in pairs.keys():
-            if v in q.keys():
-                q[v] = alpha*float(q[v])+beta*float(pairs[v])/float(n)
-            else:
-                q[v] = beta*float(pairs[v])/float(n)
-        '''
         return new_qvoc, new_qtf
+    '''
     
     def add_bow(self, np.ndarray[np.int_t, ndim=1] voca, np.ndarray[np.int_t, ndim=1] vocb, \
                       np.ndarray[np.double_t, ndim=1] tfa, np.ndarray[np.double_t, ndim=1] tfb):
@@ -144,18 +146,19 @@ class QueryProcessor():
                     continue
                 score = self.BM25_all(self.second[i], self.voc[i], qtf.astype(np.double), qvoc)
                 if score>0:
-                    scores.append([i, score])
+                    scores.append((i, score))
             scores.sort(key=lambda x: x[1], reverse=True)
-            plt.hist(np.array(scores)[:100,1], bins=100, alpha=0.5, label='old')
+            #plt.bar(range(100), np.array(scores)[:100,1], alpha=0.5, label='old')
             candidate_tf = []
             candidate_voc = []
             for s in scores[:n]:
                 candidate_tf.append(self.tf[s[0]])
                 candidate_voc.append(self.voc[s[0]])
-            qvoc, qtf = self.Rocchio(qtf, qvoc, candidate_tf, candidate_voc)
+            #qvoc, qtf = self.Rocchio(qtf, qvoc, candidate_tf, candidate_voc)
+            qtfs = self.Rocchio(qtfs, candidate_tf, candidate_voc)
             
-            #qvoc = np.array(list(qtfs.keys()))
-            #qtf = np.array(list(qtfs.values()))
+            qvoc = np.array(list(qtfs.keys()))
+            qtf = np.array(list(qtfs.values()))
             scores = []
             for i in range(self.N):
                 if self.doclens[i]==0:
@@ -165,19 +168,18 @@ class QueryProcessor():
                     scores.append([i, score])
 
             scores.sort(key=lambda x: x[1], reverse=True)
-            plt.hist(np.array(scores)[:100,1], bins=100, alpha=0.5, label='new')
             #score_arr = np.array(scores)[:, 1]
             #thres = np.median(score_arr) + np.std(score_arr)
             #print("thres: ", thres)
             self.results.append([])
-            #can_num = int(max(len(scores)*0.2, 100))
-            for s in scores[:100]:
+            can_num = int(min(len(scores)*0.2, 100))
+            plt.bar(range(can_num), np.array(scores)[:can_num,1])
+            for s in scores[:can_num]:
                 #print(s, end=' ')
                 #if s[1] > thres:
                 self.results[-1].append(s[0])
                 #else:
                 #    print("thres works!")
-            plt.legend(loc='upper right')
             plt.savefig('./vis/result'+str(qid)+'.jpg')
             plt.clf()
 
