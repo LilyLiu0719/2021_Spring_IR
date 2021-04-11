@@ -7,11 +7,13 @@ from tfidf import DocProcessor
 from math import log
 from tqdm import tqdm
 import csv
+import matplotlib.pyplot as plt
 cimport numpy as np
 
-alpha = 3
+alpha = 2.5
 beta = 1
-n = 5
+n = 7
+k3 = 100
 
 class QueryProcessor():
     def __init__(self):
@@ -74,7 +76,7 @@ class QueryProcessor():
                 terms.pop(i+1)
             i+=1
         return terms
-    
+
     def BM25_all( self, np.ndarray[np.double_t, ndim=1] second, \
                         np.ndarray[np.int_t, ndim=1] voc, \
                         np.ndarray[np.double_t, ndim=1] qtf, \
@@ -82,38 +84,58 @@ class QueryProcessor():
 
         cdef float score = 0
         cdef int p1=0, p2=0
+        cdef np.ndarray[np.double_t, ndim=1] third = (k3+1)*qtf/(k3+qtf)
 
-        while p1<second.size and p2<qtf.size:
+        while p1<second.size and p2<third.size:
             if voc[p1] < qvoc[p2]:
                 p1+=1
             elif voc[p1] > qvoc[p2]:
                 p2+=1
             else:
-                score += self.first[voc[p1]]*second[p1]*qtf[p2]
+                score += self.first[voc[p1]]*second[p1]*third[p2]
                 p1+=1
                 p2+=1
         return score
     
-    def Rocchio(self, q, tf, voc):
+    def Rocchio(self, np.ndarray[np.int_t, ndim=1] qtf, np.ndarray[np.int_t, ndim=1] qvoc, list tf, list voc):
+        cdef np.ndarray[np.double_t, ndim=1] new_qtf = np.array([], dtype=np.double)
+        cdef np.ndarray[np.int_t, ndim=1] new_qvoc = np.array([], dtype=np.int)
+
+        for i in range(1, n):
+            new_qvoc, new_qtf = self.add_bow(new_qvoc, np.array(voc[i]), new_qtf, np.array(tf[i]).astype(np.double))
+        new_qvoc, new_qtf = self.add_bow(new_qvoc, qvoc, beta*new_qtf, alpha*qtf.astype(np.double))
+        '''
         pool = []
         for i in range(n):
-            for j in range(len(tf)):
-                pool += [voc[i][j] for k in range(tf[i][j])]
-        pairs = Counter(pool)
+            for j in range(len(tf[i])):
+                pool += [voc[i][j]]*tf[i][j]
+        cdef dict pairs = dict(Counter(pool))
+        print("pairs:", pairs)
 
-        for v, tf in pairs.items():
+        for v in pairs.keys():
             if v in q.keys():
-                q[v] = alpha*float(q[v])+beta*float(pairs[v])/n
+                q[v] = alpha*float(q[v])+beta*float(pairs[v])/float(n)
             else:
-                q[v] = beta*float(pairs[v])/n
-        return q
+                q[v] = beta*float(pairs[v])/float(n)
+        '''
+        return new_qvoc, new_qtf
+    
+    def add_bow(self, np.ndarray[np.int_t, ndim=1] voca, np.ndarray[np.int_t, ndim=1] vocb, \
+                      np.ndarray[np.double_t, ndim=1] tfa, np.ndarray[np.double_t, ndim=1] tfb):
+
+        cdef np.ndarray[np.int_t, ndim=1] all_voc = np.union1d(voca, vocb)
+        cdef np.ndarray[np.double_t, ndim=1] all_tf = np.zeros(len(all_voc), dtype=np.double)
+        all_tf[np.in1d(all_voc, voca)] += tfa
+        all_tf[np.in1d(all_voc, vocb)] += tfb
+
+        return all_voc, all_tf 
 
     def process(self):
         print("[*] start processing query")
         progress = tqdm(total=len(self.queries))
         for qid, query in enumerate(self.queries): # query = [ [char1, char2, char3], [char4, char5] ]
             progress.update(1)
-            qtfs = Counter(list((chain.from_iterable(query))))
+            qtfs = dict(Counter(list((chain.from_iterable(query)))))
             qvoc = np.array(list(qtfs.keys()))
             qtf = np.array(list(qtfs.values()))
             scores = []
@@ -124,16 +146,16 @@ class QueryProcessor():
                 if score>0:
                     scores.append([i, score])
             scores.sort(key=lambda x: x[1], reverse=True)
-            #print("score: ", scores)
+            plt.hist(np.array(scores)[:100,1], bins=100, alpha=0.5, label='old')
             candidate_tf = []
             candidate_voc = []
             for s in scores[:n]:
                 candidate_tf.append(self.tf[s[0]])
                 candidate_voc.append(self.voc[s[0]])
-            qtfs = self.Rocchio(qtfs, candidate_tf, candidate_voc)
+            qvoc, qtf = self.Rocchio(qtf, qvoc, candidate_tf, candidate_voc)
             
-            qvoc = np.array(list(qtfs.keys()))
-            qtf = np.array(list(qtfs.values()))
+            #qvoc = np.array(list(qtfs.keys()))
+            #qtf = np.array(list(qtfs.values()))
             scores = []
             for i in range(self.N):
                 if self.doclens[i]==0:
@@ -141,13 +163,27 @@ class QueryProcessor():
                 score = self.BM25_all(self.second[i], self.voc[i], qtf, qvoc)
                 if score>0:
                     scores.append([i, score])
+
             scores.sort(key=lambda x: x[1], reverse=True)
+            plt.hist(np.array(scores)[:100,1], bins=100, alpha=0.5, label='new')
+            #score_arr = np.array(scores)[:, 1]
+            #thres = np.median(score_arr) + np.std(score_arr)
+            #print("thres: ", thres)
             self.results.append([])
+            #can_num = int(max(len(scores)*0.2, 100))
             for s in scores[:100]:
+                #print(s, end=' ')
+                #if s[1] > thres:
                 self.results[-1].append(s[0])
+                #else:
+                #    print("thres works!")
+            plt.legend(loc='upper right')
+            plt.savefig('./vis/result'+str(qid)+'.jpg')
+            plt.clf()
 
     def save(self):
-        with open('submission.csv', 'w', newline='') as csvfile:
+        with open('submission-train.csv', 'w', newline='') as csvfile:
+        #with open('submission-test.csv', 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(['query_id', 'retrieved_docs'])
             for i in range(len(self.qids)):

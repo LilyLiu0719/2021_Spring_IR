@@ -5,7 +5,7 @@ from tqdm import tqdm
 import pickle
 cimport numpy as np
 
-k1 = 2.5
+k1 = 2
 b = 0.75
 k3 = 100
 
