@@ -11,8 +11,8 @@ import csv
 cimport numpy as np
 
 alpha = 1
-beta = 0.02
-n = 1
+beta = 0.01
+n = 5
 k3 = 100
 
 class QueryProcessor():
@@ -84,16 +84,16 @@ class QueryProcessor():
             i+=1
         return terms
 
-    def BM25_all( self, np.ndarray[np.double_t, ndim=1] second, \
+    def BM25_all( self, np.ndarray[np.float_t, ndim=1] second, \
                         np.ndarray[np.int_t, ndim=1] voc, \
-                        np.ndarray[np.double_t, ndim=1] qtf, \
+                        np.ndarray[np.float_t, ndim=1] qtf, \
                         np.ndarray[np.int_t, ndim=1] qvoc):
 
         cdef float score = 0
         cdef int p1=0, p2=0
-        cdef np.ndarray[np.double_t, ndim=1] third = (k3+1)*qtf/(k3+qtf)
+        cdef np.ndarray[np.float_t, ndim=1] third = (k3+1)*qtf/(k3+qtf)
 
-        while p1<second.size and p2<third.size:
+        while p1<second.shape[0] and p2<third.shape[0]:
             if voc[p1] < qvoc[p2]:
                 p1+=1
             elif voc[p1] > qvoc[p2]:
@@ -176,13 +176,13 @@ class QueryProcessor():
             #qids = qvoc.argsort()
             #qtf = qtf[qids]
             #qvoc = qvoc[qids]
-            scores = []
-            for i in range(self.N):
-                if self.doclens[i]==0:
-                    continue
-                score = self.BM25_all(self.second[i], self.voc[i], qtf.astype(np.double), qvoc)
-                if score>0:
-                    scores.append((i, score))
+            scores = [(i, self.BM25_all(self.second[i], self.voc[i], qtf.astype(np.double), qvoc)) for i in range(self.N)]
+            #for i in range(self.N):
+            #    if self.doclens[i]==0:
+            #        continue
+            #    score = self.BM25_all(self.second[i], self.voc[i], qtf.astype(np.double), qvoc)
+            #    if score>0:
+            #        scores.append((i, score))
             scores.sort(key=lambda x: x[1], reverse=True)
             #plt.bar(range(100), np.array(scores)[:100,1], alpha=0.5, label='old')
 
@@ -197,16 +197,20 @@ class QueryProcessor():
                 
                 #qvoc = np.array(list(qtfs.keys()))
                 #qtf = np.array(list(qtfs.values()))
-                #qids = qvoc.argsort()
-                #qtf = qtf[qids]
-                #qvoc = qvoc[qids]
-                scores = []
-                for i in range(self.N):
-                    if self.doclens[i]==0:
-                        continue
-                    score = self.BM25_all(self.second[i], self.voc[i], qtf, qvoc)
-                    if score>0:
-                        scores.append([i, score])
+                qids = (-1*qtf).argsort()
+                qtf = qtf[qids[:300]]
+                qvoc = qvoc[qids[:300]]
+                qids = qvoc.argsort()
+                qtf = qtf[qids]
+                qvoc = qvoc[qids]
+                #scores = []
+                scores = [(i, self.BM25_all(self.second[i], self.voc[i], qtf.astype(np.double), qvoc)) for i in range(self.N)]
+                #for i in range(self.N):
+                #    if self.doclens[i]==0:
+                #        continue
+                #    score = self.BM25_all(self.second[i], self.voc[i], qtf, qvoc)
+                #    if score>0:
+                #        scores.append([i, score])
 
                 scores.sort(key=lambda x: x[1], reverse=True)
             #score_arr = np.array(scores)[:, 1]
