@@ -16,8 +16,8 @@ def BM25_second(np.ndarray[np.int_t, ndim=1] tf, int dl, float avdl):
     return ( (k1 + 1) * tf ) / (K + tf)
 
 class DocProcessor():
-    def __init__(self):
-        self.inverted_file = '../model/inverted-file'
+    def __init__(self, model_dir, doc_dir):
+        self.inverted_file = model_dir + '/inverted-file'
         #self.inverted_file = '../model/inverted-file-test'
         #self.file_list = '../model/file-list'
         self.N = 46972
@@ -85,7 +85,6 @@ class DocProcessor():
                             start = True
 
             self.first = BM25_first(self.N, np.array(self.df))
-            print("first:", self.first)
             
             for i in range(self.N):
                 if len(self.tf[i]) == 0:
@@ -108,7 +107,7 @@ class DocProcessor():
             #for i in empty_index:
             #    self.doclens.insert(i, 0)
             self.avglen = sum(self.doclens)/len(self.doclens)
-            print("avglen =", self.avglen)
+            print("[*] avglen =", self.avglen)
             for i in range(self.N):
                 self.second[i] = BM25_second(self.tf[i], self.doclens[i], self.avglen)
         

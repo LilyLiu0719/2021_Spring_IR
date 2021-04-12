@@ -7,18 +7,18 @@ from tfidf import DocProcessor
 from math import log
 from tqdm import tqdm
 import csv
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 cimport numpy as np
 
-alpha = 2.5
-beta = 1
-n = 7
+alpha = 1
+beta = 0.02
+n = 1
 k3 = 100
 
 class QueryProcessor():
-    def __init__(self):
+    def __init__(self, model_path, doc_path, query_path, output_file, rocchio=False):
         self.vocab = {}
-        self.docProcessor = DocProcessor()
+        self.docProcessor = DocProcessor(model_path, doc_path)
         self.docProcessor.process()
 
         self.bigrams = self.docProcessor.get_bigram()
@@ -34,22 +34,27 @@ class QueryProcessor():
         self.results = []
         self.qids = []
         self.file_name = {}
+        self.rocchio=rocchio
+        self.output_file = output_file
 
-        print("bigram len:", len(self.bigrams))
-        
         print("[*] start parsing queries...")
-        with open("../model/vocab.all") as f:
+        if self.rocchio:
+            print("[*] Rocchio Feedback: enable")
+        else:
+            print("[*] Rocchio Feedback: disable")
+
+        with open(model_path+"/vocab.all") as f:
             for i, line in enumerate(f):
                 if i==0:
                     continue
                 self.vocab[line.strip()] = i
 
-        with open("../model/file-list") as f:
+        with open(model_path+"/file-list") as f:
             for i, line in enumerate(f):
                 name = line.strip().split('/')[-1]
                 self.file_name[i] = name.lower()
 
-        tree = ET.parse('../queries/query-test.xml')
+        tree = ET.parse(query_path)
         #tree = ET.parse('../queries/query-train.xml')
         root = tree.getroot()
         self.queries = []
@@ -98,7 +103,7 @@ class QueryProcessor():
                 p1+=1
                 p2+=1
         return score
-
+    '''
     def Rocchio(self, q, tf, voc):
         pool = []
         for i in range(n):
@@ -112,7 +117,6 @@ class QueryProcessor():
             else:
                 q[v] = beta*float(pairs[v])/n
         return q
-    '''
     def Rocchio(self, np.ndarray[np.int_t, ndim=1] qtf, np.ndarray[np.int_t, ndim=1] qvoc, list tf, list voc):
         cdef np.ndarray[np.double_t, ndim=1] new_qtf = np.array([], dtype=np.double)
         cdef np.ndarray[np.int_t, ndim=1] new_qvoc = np.array([], dtype=np.int)
@@ -121,8 +125,28 @@ class QueryProcessor():
             new_qvoc, new_qtf = self.add_bow(new_qvoc, np.array(voc[i]), new_qtf, np.array(tf[i]).astype(np.double))
         new_qvoc, new_qtf = self.add_bow(new_qvoc, qvoc, beta*new_qtf, alpha*qtf.astype(np.double))
         return new_qvoc, new_qtf
-    '''
+    ''' 
+
+    def Rocchio(self, qtf, qvoc, tf, voc):
+        new_qtf = np.array([], dtype=np.double)
+        new_qvoc = np.array([], dtype=np.int)
+
+        for i in range(1, n):
+            new_qvoc, new_qtf = self.add_bow(new_qvoc, voc[i], new_qtf, tf[i].astype(np.double))
+        new_qvoc, new_qtf = self.add_bow(new_qvoc, qvoc, beta*new_qtf, alpha*qtf.astype(np.double))
+        return new_qvoc, new_qtf
     
+    def add_bow(self, voca, vocb, tfa, tfb):
+
+        all_voc = np.union1d(voca, vocb)
+        all_tf = np.zeros(len(all_voc), dtype=np.double)
+
+        all_tf[np.in1d(all_voc, voca)] += tfa
+        all_tf[np.in1d(all_voc, vocb)] += tfb
+
+        return all_voc, all_tf 
+
+    '''
     def add_bow(self, np.ndarray[np.int_t, ndim=1] voca, np.ndarray[np.int_t, ndim=1] vocb, \
                       np.ndarray[np.double_t, ndim=1] tfa, np.ndarray[np.double_t, ndim=1] tfb):
 
@@ -132,18 +156,26 @@ class QueryProcessor():
         all_tf[np.in1d(all_voc, vocb)] += tfb
 
         return all_voc, all_tf 
+    '''
 
     def process(self):
         print("[*] start processing query")
         progress = tqdm(total=len(self.queries))
         for qid, query in enumerate(self.queries): # query = [ [char1, char2, char3], [char4, char5] ]
             progress.update(1)
-            qtfs = dict(Counter(list((chain.from_iterable(query)))))
-            qvoc = np.array(list(qtfs.keys()))
-            qtf = np.array(list(qtfs.values()))
-            qids = qvoc.argsort()
-            qtf = qtf[qids]
-            qvoc = qvoc[qids]
+            qtfs = np.zeros(len(self.bigrams)+len(self.vocab), dtype=np.int64)
+            for qterm in list(chain.from_iterable(query)):
+                qtfs[qterm]+=1
+            
+            qvoc = np.where(qtfs>0)[0]
+            qtf = qtfs[qvoc]
+
+            #qtfs = dict(Counter(list((chain.from_iterable(query)))))
+            #qvoc = np.array(list(qtfs.keys()))
+            #qtf = np.array(list(qtfs.values()))
+            #qids = qvoc.argsort()
+            #qtf = qtf[qids]
+            #qvoc = qvoc[qids]
             scores = []
             for i in range(self.N):
                 if self.doclens[i]==0:
@@ -153,46 +185,48 @@ class QueryProcessor():
                     scores.append((i, score))
             scores.sort(key=lambda x: x[1], reverse=True)
             #plt.bar(range(100), np.array(scores)[:100,1], alpha=0.5, label='old')
-            candidate_tf = []
-            candidate_voc = []
-            for s in scores[:n]:
-                candidate_tf.append(self.tf[s[0]])
-                candidate_voc.append(self.voc[s[0]])
-            #qvoc, qtf = self.Rocchio(qtf, qvoc, candidate_tf, candidate_voc)
-            qtfs = self.Rocchio(qtfs, candidate_tf, candidate_voc)
-            
-            qvoc = np.array(list(qtfs.keys()))
-            qtf = np.array(list(qtfs.values()))
-            qids = qvoc.argsort()
-            qtf = qtf[qids]
-            qvoc = qvoc[qids]
-            scores = []
-            for i in range(self.N):
-                if self.doclens[i]==0:
-                    continue
-                score = self.BM25_all(self.second[i], self.voc[i], qtf, qvoc)
-                if score>0:
-                    scores.append([i, score])
 
-            scores.sort(key=lambda x: x[1], reverse=True)
+            if self.rocchio:
+                candidate_tf = []
+                candidate_voc = []
+                for s in scores[:n]:
+                    candidate_tf.append(self.tf[s[0]])
+                    candidate_voc.append(self.voc[s[0]])
+                qvoc, qtf = self.Rocchio(qtf, qvoc, candidate_tf, candidate_voc)
+                #qtfs = self.Rocchio(qtfs, candidate_tf, candidate_voc)
+                
+                #qvoc = np.array(list(qtfs.keys()))
+                #qtf = np.array(list(qtfs.values()))
+                #qids = qvoc.argsort()
+                #qtf = qtf[qids]
+                #qvoc = qvoc[qids]
+                scores = []
+                for i in range(self.N):
+                    if self.doclens[i]==0:
+                        continue
+                    score = self.BM25_all(self.second[i], self.voc[i], qtf, qvoc)
+                    if score>0:
+                        scores.append([i, score])
+
+                scores.sort(key=lambda x: x[1], reverse=True)
             #score_arr = np.array(scores)[:, 1]
             #thres = np.median(score_arr) + np.std(score_arr)
             #print("thres: ", thres)
             self.results.append([])
-            can_num = int(min(len(scores)*0.2, 100))
-            plt.bar(range(can_num), np.array(scores)[:can_num,1])
+            can_num = int(min(len(scores), 100))
+            #plt.bar(range(can_num), np.array(scores)[:can_num,1])
             for s in scores[:can_num]:
                 #print(s, end=' ')
                 #if s[1] > thres:
                 self.results[-1].append(s[0])
                 #else:
                 #    print("thres works!")
-            plt.savefig('./vis/result'+str(qid)+'.jpg')
-            plt.clf()
+            #plt.savefig('./vis/result'+str(qid)+'.jpg')
+            #plt.clf()
 
     def save(self):
         #with open('submission-train.csv', 'w', newline='') as csvfile:
-        with open('submission-test.csv', 'w', newline='') as csvfile:
+        with open(self.output_file, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(['query_id', 'retrieved_docs'])
             for i in range(len(self.qids)):
