@@ -12,7 +12,7 @@ cimport numpy as np
 
 alpha = 1
 beta = 0.01
-n = 5
+n = 4
 k3 = 100
 
 class QueryProcessor():
@@ -198,8 +198,8 @@ class QueryProcessor():
                 #qvoc = np.array(list(qtfs.keys()))
                 #qtf = np.array(list(qtfs.values()))
                 qids = (-1*qtf).argsort()
-                qtf = qtf[qids[:300]]
-                qvoc = qvoc[qids[:300]]
+                qtf = qtf[qids[:250]]
+                qvoc = qvoc[qids[:250]]
                 qids = qvoc.argsort()
                 qtf = qtf[qids]
                 qvoc = qvoc[qids]
