@@ -10,17 +10,6 @@ from tqdm import tqdm
 import random
 from utils import calc_ap
 import argparse
-import matplotlib.pyplot as plt
-
-val_losses = []
-train_losses = []
-val_accs = []
-train_accs = []
-val_maps = []
-train_maps = []
-
-BCELoss = nn.BCELoss()
-sigmoid = nn.Sigmoid()
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print("[*] running on", device)
@@ -36,8 +25,6 @@ parser.add_argument("-o", '--out_path', type=str, default='results/submission.cs
 parser.add_argument("-m", '--model_path', type=str, default='models/model.pth', help="model path")
 parser.add_argument("-t", '--train_path', type=str, default='train.csv', help="train.csv path")
 args = parser.parse_args()
-
-
 
 class MatrixFactorization(torch.nn.Module):
     def __init__(self, n_users, n_items, n_factors=20):
@@ -56,13 +43,6 @@ class MatrixFactorization(torch.nn.Module):
         item_embedding = self.item_factors(item).transpose(0, 1)
         ratings = torch.mm(user_embedding, item_embedding)
         return ratings
-
-def acc_fn(logit, label):
-    logit = logit.cpu().detach().numpy()
-    label = label.cpu().detach().numpy()
-    pred = (logit>0).astype(np.int16)
-    score = (pred==label).mean()
-    return score
 
 def top_k(ratings, uilist, k):
     ratings = ratings.cpu().detach().numpy()
@@ -134,6 +114,7 @@ def main(train_path):
     print("[*] number of pairs:", train_size, val_size)
 
     train_pairs_p = np.array(train_pairs_p)
+    #train_pairs_p = np.concatenate((train_pairs_p, train_pairs_p, train_pairs_p), axis=0)
     val_pairs_p = np.array(val_pairs_p)
     
     #np.random.shuffle(train_pairs_p, axis=0)
@@ -153,7 +134,7 @@ def main(train_path):
     model = MatrixFactorization(n_user, n_item, n_factors=args.n_factor).to(device)
     loss_fn = torch.nn.BCEWithLogitsLoss(reduction='sum')
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.rlambda)
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[40, 100], gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[40, 80, 120, 150], gamma=0.35)
     
     model.zero_grad()
     
@@ -176,14 +157,12 @@ def main(train_path):
             optimizer.zero_grad()
             users = x_batch[:, 0].to(device)
             items_p = x_batch[:, 1].to(device)
+            
             items_n = torch.tensor(sample_neg(users, train_uilist_n), dtype=torch.long).to(device)
             y_pred = model(users, items_p, items_n)
-
-            loss = loss_fn(y_pred, y_batch)
-            
+            loss = loss_fn(y_pred, y_batch) 
             loss.backward()
             optimizer.step()
-            
             epoch_loss += loss.item()
         
         scheduler.step()
